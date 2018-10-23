@@ -1,7 +1,7 @@
 import hlt
 from hlt import constants
 from hlt.positionals import Direction, Position
-import functions
+
 
 import random
 #   (print statements) are reserved for the engine-bot communication.
