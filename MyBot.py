@@ -1,7 +1,6 @@
 import hlt
 from hlt import constants
 from hlt.positionals import Direction, Position
-import functions
 
 import random
 #   (print statements) are reserved for the engine-bot communication.
@@ -13,13 +12,11 @@ import logging
 # This game object contains the initial game state.
 game = hlt.Game()
 
-load = []
-gh = []
-
+dir_order = [Direction.North, Direction.South, Direction.East, Direction.West, Direction.Still]
 # At this point "game" variable is populated with initial map data.
 # This is a good place to do computationally expensive start-up pre-processing.
 # As soon as you call "ready" function below, the 2 second per turn timer will start.
-game.ready("Testbot 500")
+game.ready("Testbot v7+load")
 
 # Now that your bot is initialized, save a message to yourself in the log file with some important information.
 #   Here, you log here your id, which you can always fetch from the game object by using my_id.
@@ -31,52 +28,72 @@ while True:
     game.update_frame()
     # You extract player metadata and the updated map metadata here for convenience.
     me = game.me
+    game_map = game.game_map
+    
     if game.turn_number == 1:
         shipyard = me.shipyard.position
-        
-        '''logging.info(str(me.shipyard))
-        logging.info(type(me.shipyard))
-        try:
-            logging.info(type(me.shipyard.position))
-            logging.info(str(me.shipyard.position))
-        except:
-            pass'''
-    game_map = game.game_map
+        gh = []
+        load = []
+    
     command_queue = []
-    
-    logging.info(load)
-    
+    choices = []
+       
     for ship in me.get_ships():
+        pos = ship.position.get_surrounding_cardinals() +[ship.position]
+        
+        
+        #{(1,0):(44,10)}
+        pos_dict = {dir_order[n]:i for n,i in enumerate(pos)}
+        #{(1,0):205}
+        halite_dict = {}
+        
+        
+        for pos in pos_dict:
+            if pos_dict[pos] in choices or game_map[pos_dict[pos]].is_occupied:
+                continue
+            halite_dict[pos] = game_map[pos_dict[pos]].halite_amount
+            
+        logging.info(pos_dict)
+        logging.info(halite_dict)
+        
         if ship.id in load:
             command_queue.append(ship.stay_still())
-            if not game_map[ship.position].halite_amount >= constants.MAX_HALITE / 10:
+            if game_map[ship.position].halite_amount < constants.MAX_HALITE/10 or ship.is_full:
                 load.remove(ship.id)
-            elif ship.halite_amount > 900:
-                gh.append(ship.id)
-                load.remove(ship.id)
-        elif ship.halite_amount > 700 and ship.id not in gh:
-            gh.append(ship.id)
+        
+        
+        elif ship.halite_amount > 0.9*constants.MAX_HALITE or ship.id in gh:
             move = game_map.naive_navigate(ship, shipyard)
+            if game_map.normalize(Position(move[0], move[1])+ ship.position) in choices:
+                move = (0,0)
+            elif move !=(0,0) and ship.id not in gh:
+                load.append(ship.id)
+                
+            choices.append(game_map.normalize(Position(move[0], move[1])+ ship.position))
+                
             command_queue.append(ship.move(move))
-            if Position(move[0], move[1]) + ship.position == shipyard:
-                gh.remove(ship.id)  
-        elif ship.id in gh:
-            move = game_map.naive_navigate(ship, shipyard)
-            command_queue.append(ship.move(move))
-            if Position(move[0], move[1]) + ship.position == shipyard:
+            if ship.position == shipyard:
                 gh.remove(ship.id)
-
+            elif ship.id not in gh:
+                gh.append(ship.id)
+                        
+        
+        elif game_map[ship.position].halite_amount < constants.MAX_HALITE/8:
+            move = max(halite_dict, key=halite_dict.get)
+            command_queue.append(ship.move(move))
+            choices.append(pos_dict[move])
+            if move != (0,0):
+                load.append(ship.id)
         else:
-            command_queue.append(functions.max_halite2(game_map, ship))
-            load.append(ship.id)
-            logging.info(load)
+            choices.append(pos_dict[(0,0)])
+            command_queue.append(
+                ship.stay_still())
+       
     
     
-    
-    
-    
-    if game.turn_number <=200 and me.halite_amount >= constants.SHIP_COST and not game_map[me.shipyard].is_occupied:
-        command_queue.append(me.shipyard.spawn())
+    if game.turn_number <=200 and me.halite_amount > constants.SHIP_COST and not game_map[me.shipyard].is_occupied:
+        if False in [game_map[i].is_occupied for i in shipyard.get_surrounding_cardinals()] and shipyard not in choices:
+            command_queue.append(me.shipyard.spawn())
         
 
     # Send your moves back to the game environment, ending this turn.
